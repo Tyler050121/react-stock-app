@@ -1,0 +1,40 @@
+{
+  "database": {
+    "url": "sqlite+aiosqlite:///./stocks.db"
+  },
+  "crawler": {
+    "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36",
+    "timeout": 30
+  },
+  "ai_service": {
+    "openrouter_api_key": "你的API_KEY",
+    "site_url": "https://stock-analysis-app.com",
+    "site_name": "Stock Analysis App"
+  },
+  "cors": {
+    "origins": ["http://localhost:3000"]
+  },
+  "available_models": [
+    {"value": "deepseek/deepseek-chat:free", "label": "DeepSeek V3 (free)"},
+    {"value": "deepseek/deepseek-r1:free", "label": "DeepSeek R1 (free)"},
+    {"value": "google/gemini-exp-1206:free", "label": "fast"},
+    {"value": "google/gemini-2.0-flash-lite-preview-02-05:free", "label": "Gemini 2.0 Flash Thinking Experimental (free)"}
+  ],
+  "available_roles": [
+    {
+      "value": "宏观策划师", 
+      "label": "宏观策划师", 
+      "description": "分析宏观经济形势和行业趋势"
+    },
+    {
+      "value": "技术操盘手", 
+      "label": "技术操盘手", 
+      "description": "分析K线形态和技术指标"
+    },
+    {
+      "value": "风险管理师", 
+      "label": "风险管理师", 
+      "description": "评估投资风险和资金管理"
+    }
+  ]
+}

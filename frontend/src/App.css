@@ -1,0 +1,95 @@
+.layout {
+  min-height: 100vh;
+}
+
+.ant-layout-header {
+  padding: 0;
+  background: #001529;
+}
+
+.ant-menu {
+  line-height: 64px;
+}
+
+.stock-list-table {
+  margin-top: 16px;
+}
+
+.stock-detail-card {
+  margin-top: 24px;
+}
+
+.financial-card {
+  margin-top: 16px;
+}
+
+.chart-container {
+  min-height: 500px;
+  padding: 24px;
+  transition: opacity 0.15s ease; /* 添加过渡效果 */
+}
+
+.loading-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+}
+
+/* 添加图表切换过渡效果 */
+.chart-fade-enter {
+  opacity: 0;
+}
+
+.chart-fade-enter-active {
+  opacity: 1;
+  transition: opacity 0.15s ease;
+}
+
+.chart-fade-exit {
+  opacity: 1;
+}
+
+.chart-fade-exit-active {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+/* 响应式布局调整 */
+@media screen and (max-width: 768px) {
+  .ant-layout-content {
+    padding: 0 12px !important;
+  }
+  
+  .stock-detail-card {
+    margin-top: 12px;
+  }
+  
+  .chart-container {
+    min-height: 300px;
+  }
+  
+  .ant-statistic {
+    margin-bottom: 16px;
+  }
+}
+
+/* 自定义滚动条样式 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}

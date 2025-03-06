@@ -121,8 +121,6 @@ const AnalysisConfig: React.FC<AnalysisConfigProps> = ({
               style={{ width: '100%', marginTop: 8 }}
               onChange={onConclusionModelChange}
               options={modelOptions}
-              placeholder="默认使用第一个角色的模型"
-              allowClear
             />
           </Space>
         </Card>

@@ -183,8 +183,16 @@ const onSearch = async (value: string) => {
           onClick={handleClick}
           style={{ flex: 1 }}
         >
-          <Menu.Item key="home" icon={<HomeOutlined />}>
-            股票列表
+          <Menu.Item
+            key="home"
+            icon={<HomeOutlined />}
+            className="custom-menu-item"
+            style={{
+              background: 'none',
+              backgroundColor: 'transparent'
+            }}
+          >
+            首页
           </Menu.Item>
           
         </Menu>

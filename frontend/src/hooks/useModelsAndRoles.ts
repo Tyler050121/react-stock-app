@@ -20,8 +20,8 @@ export const useModelsAndRoles = () => {
   const [selectedActor2, setSelectedActor2] = useState<string>('');
   const [selectedActor3, setSelectedActor3] = useState<string>('');
   
-  // 综合结论模型选择
-  const [conclusionModel, setConclusionModel] = useState<string>('');
+  // 综合结论模型选择，默认使用第一个角色的模型
+  const [conclusionModel, setConclusionModel] = useState<string>('deepseek/deepseek-chat:free');
 
   // 获取模型和角色列表
   useEffect(() => {
@@ -78,6 +78,8 @@ export const useModelsAndRoles = () => {
         setSelectedActor1('宏观策划师');
         setSelectedActor2('技术操盘手');
         setSelectedActor3('风险管理师');
+        // 设置综合结论模型默认值为第一个角色的模型
+        setConclusionModel('deepseek/deepseek-chat:free');
       } finally {
         setLoadingOptions(false);
       }

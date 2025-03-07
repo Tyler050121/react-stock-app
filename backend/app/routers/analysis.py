@@ -1,10 +1,6 @@
-"""
-股票AI分析相关路由
-"""
 import json
 import logging
 from fastapi import APIRouter, Request, Depends, HTTPException
-from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -18,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+
 @router.get("/models")
 async def get_models():
     """获取可用的AI模型和角色列表"""
@@ -28,6 +25,7 @@ async def get_models():
         logger.error(f"获取模型列表失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取模型列表失败: {str(e)}")
 
+
 @router.api_route("/{code}", methods=["GET", "POST"])
 async def analyze_stock(
     code: str,
@@ -35,7 +33,6 @@ async def analyze_stock(
     db: AsyncSession = Depends(get_db)
 ):
     """分析股票,流式返回结果。支持POST和GET请求。
-    
     POST: 从请求体中获取actors参数
     GET: 从查询参数中获取actors参数(用于SSE连接)
     """
@@ -57,16 +54,16 @@ async def analyze_stock(
             if not actors:
                 raise HTTPException(status_code=400, detail="缺少actors参数")
 
-        logger.info(f"开始分析股票: {code}, 角色和模型: {actors}")
-
         # 1. 获取股票基本信息
         query = select(Stock).where(Stock.code == code)
         result = await db.execute(query)
         stock = result.scalar_one_or_none()
-        
+
         if not stock:
             raise HTTPException(status_code=404, detail="股票不存在")
         
+        logger.info(f"已查询到股票信息,即将开始分析股票: {code}")
+
         # 2. 获取K线数据(用于技术分析)
         kline_query = (
             select(KLineData)
@@ -77,7 +74,7 @@ async def analyze_stock(
         )
         result = await db.execute(kline_query)
         klines = result.scalars().all()
-        
+
         # 转换为字典列表
         kline_data = [
             {
@@ -90,7 +87,7 @@ async def analyze_stock(
                 "turnover": kline.turnover
             } for kline in klines
         ]
-        
+
         # 3. 流式返回AI分析结果
         analyzer = StockAnalyzer()
         return EventSourceResponse(
@@ -102,7 +99,7 @@ async def analyze_stock(
             ),
             media_type="text/event-stream"
         )
-    
+
     except HTTPException:
         raise
     except Exception as e:

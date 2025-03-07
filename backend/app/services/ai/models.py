@@ -5,9 +5,9 @@ AI模型和角色配置
 # 可用模型列表
 AVAILABLE_MODELS = [
     {"value": "deepseek/deepseek-chat:free", "label": "DeepSeek V3 (free)"},
-    {"value": "deepseek/deepseek-r1:free", "label": "DeepSeek R1 (free)"},
-    {"value": "google/gemini-exp-1206:free", "label": "fast"},
-    {"value": "google/gemini-2.0-flash-lite-preview-02-05:free", "label": "Gemini 2.0 Flash Thinking Experimental (free)"},
+    # {"value": "deepseek/deepseek-r1:free", "label": "DeepSeek R1 (free)"},
+    {"value": "google/gemini-exp-1206:free", "label": "gemini"},
+    {"value": "meta-llama/llama-3-8b-instruct:free", "label": "meta-llama/llama-3-8b-instruct:free"},
 ]
 
 # 角色配置(扮演的专家角色)

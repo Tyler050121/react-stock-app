@@ -51,11 +51,6 @@ export const useStockAnalysis = (stockCode: string | undefined) => {
 
   // 开始分析
   const startAnalysis = async (selectedActorsWithModels: AnalysisActor[], stock: { code: string; name: string }) => {
-    if (!stockCode || selectedActorsWithModels.length === 0) {
-      message.error('请至少选择一个角色和对应的模型');
-      return;
-    }
-
     try {
       // 重置分析状态
       setAnalyzing(true);
@@ -94,28 +89,16 @@ export const useStockAnalysis = (stockCode: string | undefined) => {
         eventSourceRef.current.close();
       }
 
-      // 转换数据格式为后端期望的格式
-      const requestData = {
-        actors: selectedActorsWithModels.map(item => ({
-          actor: item.actor,
-          model: item.model
-        }))
-      };
-
-      console.log('发送分析请求,数据:', requestData);
-
-      // 发送分析请求, 传递角色和模型数组
-      await axios.post(`http://localhost:8000/api/analysis/${stockCode}`, requestData);
-
       // 将选中的角色和模型转换为查询字符串,用于SSE连接
       const actorsQueryString = encodeURIComponent(JSON.stringify(selectedActorsWithModels));
+      console.log('发送分析请求,数据:', selectedActorsWithModels);
       
-      // 创建新的事件源接收分析结果,使用POST发送的相同数据
+      // 创建新的事件源接收分析结果
+      // 注意：删除了多余的POST请求，只保留EventSource的GET请求
       const eventSource = new EventSource(
         `http://localhost:8000/api/analysis/${stockCode}?actors=${actorsQueryString}`,
         { withCredentials: false }
       );
-
       eventSourceRef.current = eventSource;
 
       // 处理事件源消息

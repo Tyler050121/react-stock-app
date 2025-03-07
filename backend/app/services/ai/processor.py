@@ -18,6 +18,17 @@ logger = logging.getLogger(__name__)
 REQUEST_LIMIT = 3  # 每分钟最大请求数
 REQUEST_INTERVAL = 60 / REQUEST_LIMIT  # 请求间隔时间（秒）
 
+# 重试配置
+MAX_RETRIES = 3  # 最大重试次数
+RETRY_DELAY = 2  # 重试间隔（秒）
+
+# 备用模型配置
+FALLBACK_MODELS = [
+    "deepseek/deepseek-chat:free",
+    "google/gemini-exp-1206:free",
+    "google/gemini-2.0-flash-lite-preview-02-05:free"
+]
+
 # 最后一次请求时间
 last_request_time = None
 
@@ -26,7 +37,11 @@ async def process_actor_analysis(
     stock_code: str,
     stock_name: str,
     kline_text: str,
-    is_last: bool = False
+    is_last: bool = False,
+    is_conversation: bool = False,
+    reduced_logging: bool = False,
+    retry_count: int = 0,
+    fallback_model_index: int = -1
 ) -> Dict[str, Any]:
     """处理单个角色的分析
     
@@ -36,6 +51,8 @@ async def process_actor_analysis(
         stock_name: 股票名称
         kline_text: 格式化的K线数据
         is_last: 是否最后一个角色
+        is_conversation: 是否以对话形式进行分析
+        reduced_logging: 是否减少日志输出
         
     Returns:
         包含分析结果和消息列表的字典
@@ -75,36 +92,55 @@ async def process_actor_analysis(
     }))
     
     # 准备提示词
-    prompt = ROLE_PROMPTS[actor].format(
+    base_prompt = ROLE_PROMPTS[actor].format(
         stock_name=stock_name,
         stock_code=stock_code,
         kline_data=kline_text
     )
     
-    # 添加分析开始的详细信息
-    messages.append(json.dumps({
-        "message": f"已准备{actor}分析提示词,字数:{len(prompt)}",
-        "type": "info",
-        "detail": "prompt_ready"
-    }))
+    # 如果是对话模式，修改提示词以包含所有之前的对话记录
+    # 不再仅限于 "first_round_opinions"，而是处理任何轮次的对话
+    if is_conversation:
+        previous_opinions = actor_data.get("first_round_opinions", "")
+        if previous_opinions:
+            prompt = (
+                f"{base_prompt}\n\n"
+                f"以下是之前的分析和观点记录，请基于这些信息继续进行分析，重点关注新的见解或反驳现有观点：\n\n"
+                f"{previous_opinions}"
+            )
+        else:
+            prompt = base_prompt
+    else:
+        prompt = base_prompt
+    
+    # 减少不必要的详细日志
+    if not reduced_logging:
+        # 添加分析开始的详细信息
+        messages.append(json.dumps({
+            "message": f"已准备{actor}分析提示词,字数:{len(prompt)}",
+            "type": "info",
+            "detail": "prompt_ready"
+        }))
     
     try:
-        # 输出API请求开始的信息
-        messages.append(json.dumps({
-            "message": f"开始请求{model} API进行{actor}分析...",
-            "type": "info",
-            "detail": "api_request_start",
-            "model": model
-        }))
+        # 只输出必要的API请求信息
+        if not reduced_logging:
+            messages.append(json.dumps({
+                "message": f"开始请求{model} API进行{actor}分析...",
+                "type": "info",
+                "detail": "api_request_start",
+                "model": model
+            }))
         
         # 记录请求开始时间
         request_start_time = datetime.now()
-        logger.info(f"开始请求 {model} API 进行 {actor} 分析, 提示词长度: {len(prompt)}")
-        
-        # 记录API密钥信息（不记录完整密钥）
-        api_key = config.openrouter_api_key
-        key_status = "未设置" if not api_key else f"已设置 (以{api_key[:8]}...开头)"
-        logger.info(f"OpenRouter API密钥状态: {key_status}")
+        if not reduced_logging:
+            logger.info(f"开始请求 {model} API 进行 {actor} 分析, 提示词长度: {len(prompt)}")
+            
+            # 记录API密钥信息（不记录完整密钥）
+            api_key = config.openrouter_api_key
+            key_status = "未设置" if not api_key else f"已设置 (以{api_key[:8]}...开头)"
+            logger.info(f"OpenRouter API密钥状态: {key_status}")
         
         # 准备请求头
         headers = {
@@ -115,37 +151,45 @@ async def process_actor_analysis(
         }
         
         # 准备请求体
+        # 修改系统提示词，更好地引导模型进行多轮对话分析
+        system_prompt = "你是一个专业的股票分析AI助手"
+        if is_conversation:
+            system_prompt += "，正在参与多轮分析讨论。请基于之前的分析进行深入评论，可以同意、补充或反驳其他观点。"
+        
         payload = {
             "model": model,
             "messages": [
                 {
                     "role": "system",
-                    "content": "你是一个专业的股票分析AI助手"
+                    "content": system_prompt
                 },
                 {
                     "role": "user",
                     "content": prompt
                 }
-            ]
+            ],
+            "timeout": 120  # 增加请求超时时间到120秒
         }
         
-        # 记录请求信息
-        logger.info(f"请求URL: https://openrouter.ai/api/v1/chat/completions")
-        logger.info(f"请求头: {headers}")
-        logger.info(f"请求模型: {model}")
+        # 减少不必要的日志
+        if not reduced_logging:
+            # 记录请求信息
+            logger.info(f"请求URL: https://openrouter.ai/api/v1/chat/completions")
+            logger.info(f"请求头: {headers}")
+            logger.info(f"请求模型: {model}")
         
-        # 调用AI API
+        # 调用AI API - 增加超时时间
         response = requests.post(
             url="https://openrouter.ai/api/v1/chat/completions",
             headers=headers,
             json=payload,
-            timeout=60  # 增加超时时间
+            timeout=180  # 增加超时时间到3分钟
         )
         
         # 计算请求耗时
         request_time = (datetime.now() - request_start_time).total_seconds()
         
-        # 输出API响应信息
+        # 只输出必要的响应信息
         messages.append(json.dumps({
             "message": f"{actor}分析API请求完成,耗时:{request_time:.2f}秒",
             "type": "info",
@@ -153,16 +197,18 @@ async def process_actor_analysis(
             "time_taken": f"{request_time:.2f}"
         }))
         
-        logger.info(f"{actor}分析API请求完成,耗时:{request_time:.2f}秒,状态码:{response.status_code}")
-        
-        # 记录响应状态码
-        logger.info(f"API响应状态码: {response.status_code}")
+        if not reduced_logging:
+            logger.info(f"{actor}分析API请求完成,耗时:{request_time:.2f}秒,状态码:{response.status_code}")
+            # 记录响应状态码
+            logger.info(f"API响应状态码: {response.status_code}")
         
         try:
             response_data = response.json()
             
-            # 记录完整响应（用于调试）
-            logger.info(f"API响应内容: {json.dumps(response_data, ensure_ascii=False)}")
+            # 减少不必要的日志
+            if not reduced_logging:
+                # 记录完整响应（用于调试）
+                logger.info(f"API响应内容: {json.dumps(response_data, ensure_ascii=False)}")
             
             if response.status_code == 200 and "choices" in response_data:
                 analysis_result = response_data["choices"][0]["message"]["content"]
@@ -171,10 +217,14 @@ async def process_actor_analysis(
                 word_count = len(analysis_result.split())
                 character_count = len(analysis_result)
                 
+                # 修改: 统一设置为分析类型为"analysis"，无论是否是会话模式
+                # 即使是conversation类型的消息也设置为analysis类型，确保前端能正确渲染
+                analysis_type = "analysis"
+                
                 result_message = json.dumps({
                     "actor": actor,
                     "content": analysis_result,
-                    "type": "analysis",
+                    "type": analysis_type,  # 统一输出为 "analysis" 类型
                     "stats": {
                         "word_count": word_count,
                         "character_count": character_count,
@@ -187,7 +237,7 @@ async def process_actor_analysis(
                 return {
                     "actor": actor,
                     "content": analysis_result,
-                    "type": "analysis",
+                    "type": analysis_type,  # 统一输出为 "analysis" 类型
                     "messages": messages
                 }
             else:
@@ -205,16 +255,76 @@ async def process_actor_analysis(
                     error_detail = "API认证失败，请检查OpenRouter API密钥是否有效"
                     logger.critical(f"认证错误: {error_msg}")
                 else:
+                    # 添加通用错误处理
                     error_detail = error_msg
-                
-                messages.append(json.dumps({
-                    "error": f"{actor}分析出错: {error_detail}",
-                    "type": "error",
-                    "detail": {
-                        "error_type": error_type,
-                        "error_code": error_code
-                    }
-                }))
+                    
+                    # 处理提供商错误
+                    if "provider" in error_msg.lower() or error_code == 400:
+                        # 检查是否可以重试
+                        if retry_count < MAX_RETRIES:
+                            next_retry = retry_count + 1
+                            retry_delay = RETRY_DELAY * next_retry  # 递增延迟
+                            
+                            messages.append(json.dumps({
+                                "message": f"{actor}分析遇到临时错误，正在进行第{next_retry}次重试...",
+                                "type": "retry",
+                                "retry_count": next_retry
+                            }))
+                            
+                            logger.info(f"Provider错误，正在进行第{next_retry}次重试，延迟{retry_delay}秒")
+                            await asyncio.sleep(retry_delay)
+                            
+                            return await process_actor_analysis(
+                                actor_data, stock_code, stock_name, kline_text,
+                                is_last, is_conversation, reduced_logging,
+                                retry_count=next_retry
+                            )
+                        # 尝试使用备用模型
+                        elif fallback_model_index < len(FALLBACK_MODELS) - 1:
+                            next_fallback_index = fallback_model_index + 1
+                            fallback_model = FALLBACK_MODELS[next_fallback_index]
+                            
+                            # 如果当前模型已经是备用模型之一，跳过
+                            if model == fallback_model:
+                                next_fallback_index += 1
+                                if next_fallback_index >= len(FALLBACK_MODELS):
+                                    error_detail = "所有可用模型均已尝试，请稍后重试"
+                                else:
+                                    fallback_model = FALLBACK_MODELS[next_fallback_index]
+                            
+                            if next_fallback_index < len(FALLBACK_MODELS):
+                                messages.append(json.dumps({
+                                    "message": f"{actor}分析使用模型{model}失败，正在尝试备用模型{fallback_model}...",
+                                    "type": "fallback",
+                                    "original_model": model,
+                                    "fallback_model": fallback_model
+                                }))
+                                
+                                logger.info(f"正在尝试备用模型: {fallback_model}")
+                                
+                                # 使用备用模型重试
+                                actor_data_copy = actor_data.copy()
+                                actor_data_copy["model"] = fallback_model
+                                
+                                return await process_actor_analysis(
+                                    actor_data_copy, stock_code, stock_name, kline_text,
+                                    is_last, is_conversation, reduced_logging,
+                                    retry_count=0,  # 重置重试计数
+                                    fallback_model_index=next_fallback_index
+                                )
+                        
+                        error_detail = "AI服务提供商暂时不可用，已尝试所有可用选项"
+                    
+                    messages.append(json.dumps({
+                        "error": f"{actor}分析出错: {error_detail}",
+                        "type": "error",
+                        "detail": {
+                            "error_type": error_type,
+                            "error_code": error_code,
+                            "model": model,
+                            "timestamp": datetime.now().isoformat()
+                        }
+                    }))
                 
                 return {"messages": messages}
         except ValueError as e:
@@ -244,10 +354,13 @@ async def process_actor_analysis(
             await asyncio.sleep(0.5)
 
 async def generate_conclusion(
-    results: List[Dict[str, Any]], 
-    stock_code: str, 
+    results: List[Dict[str, Any]],
+    stock_code: str,
     stock_name: str,
-    conclusion_model: Optional[str] = None
+    conclusion_model: Optional[str] = None,
+    reduced_logging: bool = False,
+    retry_count: int = 0,
+    fallback_model_index: int = -1
 ) -> AsyncIterator[str]:
     """生成综合结论
     
@@ -256,6 +369,7 @@ async def generate_conclusion(
         stock_code: 股票代码
         stock_name: 股票名称
         conclusion_model: 结论生成使用的模型
+        reduced_logging: 是否减少日志输出
     
     Yields:
         结论相关的消息
@@ -289,7 +403,8 @@ async def generate_conclusion(
         if not conclusion_model:
             conclusion_model = "deepseek/deepseek-chat:free"
         
-        logger.info(f"开始生成综合结论,使用模型:{conclusion_model}")
+        if not reduced_logging:
+            logger.info(f"开始生成综合结论,使用模型:{conclusion_model}")
         
         # 记录请求开始时间
         conclusion_start_time = datetime.now()
@@ -314,29 +429,33 @@ async def generate_conclusion(
                     "role": "user",
                     "content": conclusion_prompt
                 }
-            ]
+            ],
+            "timeout": 120  # 增加请求超时时间到120秒
         }
         
-        # 记录请求信息
-        logger.info(f"结论生成 - 请求URL: https://openrouter.ai/api/v1/chat/completions")
-        logger.info(f"结论生成 - 请求模型: {conclusion_model}")
+        if not reduced_logging:
+            # 记录请求信息
+            logger.info(f"结论生成 - 请求URL: https://openrouter.ai/api/v1/chat/completions")
+            logger.info(f"结论生成 - 请求模型: {conclusion_model}")
         
-        # 调用AI API获取结论
+        # 调用AI API获取结论 - 增加超时时间
         response = requests.post(
             url="https://openrouter.ai/api/v1/chat/completions",
             headers=headers,
             json=payload,
-            timeout=60  # 增加超时时间
+            timeout=180  # 增加超时时间到3分钟
         )
         
-        # 记录响应状态码
-        logger.info(f"结论API响应状态码: {response.status_code}")
+        if not reduced_logging:
+            # 记录响应状态码
+            logger.info(f"结论API响应状态码: {response.status_code}")
         
         try:
             response_data = response.json()
             
-            # 记录完整响应（用于调试）
-            logger.info(f"结论API响应内容: {json.dumps(response_data, ensure_ascii=False)}")
+            if not reduced_logging:
+                # 记录完整响应（用于调试）
+                logger.info(f"结论API响应内容: {json.dumps(response_data, ensure_ascii=False)}")
             
             if response.status_code == 200 and "choices" in response_data:
                 conclusion = response_data["choices"][0]["message"]["content"]
@@ -360,7 +479,8 @@ async def generate_conclusion(
                     }
                 })
                 
-                logger.info(f"综合结论生成完成,耗时:{conclusion_time:.2f}秒,字数:{conclusion_char_count}")
+                if not reduced_logging:
+                    logger.info(f"综合结论生成完成,耗时:{conclusion_time:.2f}秒,字数:{conclusion_char_count}")
             else:
                 # 提取详细错误信息
                 error_obj = response_data.get("error", {})
@@ -376,14 +496,73 @@ async def generate_conclusion(
                     error_detail = "API认证失败，请检查OpenRouter API密钥是否有效"
                     logger.critical(f"结论生成认证错误: {error_msg}")
                 else:
+                    # 处理提供商错误
                     error_detail = error_msg
+                    if "provider" in error_msg.lower() or error_code == 400:
+                        # 检查是否可以重试
+                        if retry_count < MAX_RETRIES:
+                            next_retry = retry_count + 1
+                            retry_delay = RETRY_DELAY * next_retry  # 递增延迟
+                            
+                            yield json.dumps({
+                                "message": f"结论生成遇到临时错误，正在进行第{next_retry}次重试...",
+                                "type": "retry",
+                                "retry_count": next_retry
+                            })
+                            
+                            logger.info(f"结论生成Provider错误，正在进行第{next_retry}次重试，延迟{retry_delay}秒")
+                            await asyncio.sleep(retry_delay)
+                            
+                            # 递归调用自身重试
+                            async for message in generate_conclusion(
+                                results, stock_code, stock_name, conclusion_model,
+                                reduced_logging, retry_count=next_retry
+                            ):
+                                yield message
+                            return  # 重试后返回
+                            
+                        # 尝试使用备用模型
+                        elif fallback_model_index < len(FALLBACK_MODELS) - 1:
+                            next_fallback_index = fallback_model_index + 1
+                            fallback_model = FALLBACK_MODELS[next_fallback_index]
+                            
+                            # 如果当前模型已经是备用模型之一，跳过
+                            if conclusion_model == fallback_model:
+                                next_fallback_index += 1
+                                if next_fallback_index >= len(FALLBACK_MODELS):
+                                    error_detail = "所有可用模型均已尝试，请稍后重试"
+                                else:
+                                    fallback_model = FALLBACK_MODELS[next_fallback_index]
+                            
+                            if next_fallback_index < len(FALLBACK_MODELS):
+                                yield json.dumps({
+                                    "message": f"结论生成使用模型{conclusion_model}失败，正在尝试备用模型{fallback_model}...",
+                                    "type": "fallback",
+                                    "original_model": conclusion_model,
+                                    "fallback_model": fallback_model
+                                })
+                                
+                                logger.info(f"结论生成正在尝试备用模型: {fallback_model}")
+                                
+                                # 使用备用模型重试
+                                async for message in generate_conclusion(
+                                    results, stock_code, stock_name, fallback_model,
+                                    reduced_logging, retry_count=0,
+                                    fallback_model_index=next_fallback_index
+                                ):
+                                    yield message
+                                return  # 重试后返回
+                        
+                        error_detail = "AI服务提供商暂时不可用，已尝试所有可用选项"
                 
                 yield json.dumps({
                     "error": f"生成结论出错: {error_detail}",
                     "type": "error",
                     "detail": {
                         "error_type": error_type,
-                        "error_code": error_code
+                        "error_code": error_code,
+                        "model": conclusion_model,
+                        "timestamp": datetime.now().isoformat()
                     }
                 })
         except ValueError as e:

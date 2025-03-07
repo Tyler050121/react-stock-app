@@ -178,6 +178,17 @@ async def process_actor_analysis(
             logger.info(f"请求头: {headers}")
             logger.info(f"请求模型: {model}")
         
+        # 添加API请求信息到前端消息中
+        messages.append(json.dumps({
+            "message": f"{actor}分析API请求详情",
+            "type": "api_request",
+            "details": {
+                "model": model,
+                "content": prompt,  # 将提示词内容添加到详情中
+                "timestamp": datetime.now().isoformat()
+            }
+        }))
+        
         # 调用AI API - 增加超时时间
         response = requests.post(
             url="https://openrouter.ai/api/v1/chat/completions",
@@ -229,6 +240,11 @@ async def process_actor_analysis(
                         "word_count": word_count,
                         "character_count": character_count,
                         "model": model
+                    },
+                    "api_details": {
+                        "payload": {
+                            "content": prompt  # 将提示词内容添加到API详情中
+                        }
                     }
                 })
                 
@@ -238,7 +254,12 @@ async def process_actor_analysis(
                     "actor": actor,
                     "content": analysis_result,
                     "type": analysis_type,  # 统一输出为 "analysis" 类型
-                    "messages": messages
+                    "messages": messages,
+                    "api_details": {
+                        "payload": {
+                            "content": prompt  # 将提示词内容添加到API详情中
+                        }
+                    }
                 }
             else:
                 # 提取详细错误信息

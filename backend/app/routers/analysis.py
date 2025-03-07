@@ -7,7 +7,8 @@ from sqlalchemy import select
 
 from ..core.database import get_db
 from ..models import Stock, KLineData
-from ..services.ai import StockAnalyzer, get_available_models_and_roles
+from ..services.ai import StockAnalyzer
+from app.core.config import config
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -19,7 +20,10 @@ router = APIRouter()
 async def get_models():
     """获取可用的AI模型和角色列表"""
     try:
-        models_and_roles = await get_available_models_and_roles()
+        models_and_roles = {
+            "models": config.available_models,
+            "roles": config.available_roles
+        }
         return models_and_roles
     except Exception as e:
         logger.error(f"获取模型列表失败: {e}")
@@ -61,7 +65,7 @@ async def analyze_stock(
 
         if not stock:
             raise HTTPException(status_code=404, detail="股票不存在")
-        
+
         logger.info(f"已查询到股票信息,即将开始分析股票: {code}")
 
         # 2. 获取K线数据(用于技术分析)

@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react';
-import axios from 'axios';
 import { message } from 'antd';
 
 export interface AnalysisActor {
@@ -15,6 +14,11 @@ export interface AnalysisResult {
   stats?: {
     model: string;
   };
+  api_details?: {
+    payload: {
+      content: string;
+    }
+  };
 }
 
 export interface ChatMessage {
@@ -27,6 +31,11 @@ export interface ChatMessage {
   details?: any;
   stats?: {
     model: string;
+  };
+  api_details?: {
+    payload: {
+      content: string;
+    }
   };
 }
 

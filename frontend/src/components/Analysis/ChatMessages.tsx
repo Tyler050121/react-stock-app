@@ -1,6 +1,6 @@
-import React, { useRef, useEffect } from 'react';
-import { Card, Spin, Typography, Avatar } from 'antd';
-import { UserOutlined, ExperimentOutlined } from '@ant-design/icons';
+import React, { useRef, useEffect, useState } from 'react';
+import { Card, Spin, Typography, Avatar, Button } from 'antd';
+import { UserOutlined, ExperimentOutlined, ApiOutlined } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import { ChatMessage } from '../../hooks/useStockAnalysis';
 import { getActorIcon } from './AnalysisConfig';
@@ -19,6 +19,7 @@ const getMessageColor = (type: string) => {
   switch (type) {
     case 'analysis': return '#1890ff';
     case 'conclusion': return '#52c41a';
+    case 'api_request': return '#fa8c16'; // API请求消息的颜色
     case 'info': return '#722ed1';
     case 'warning': return '#faad14';
     case 'error': return '#f5222d';
@@ -32,6 +33,16 @@ const getMessageColor = (type: string) => {
  */
 const ChatMessages: React.FC<ChatMessagesProps> = ({ messages, loading }) => {
   const chatContainerRef = useRef<HTMLDivElement>(null);
+  // 记录每条消息是否展开API详情
+  const [expandedApiDetails, setExpandedApiDetails] = useState<{[key: number]: boolean}>({});
+  
+  // 切换API详情展开状态
+  const toggleApiDetails = (index: number) => {
+    setExpandedApiDetails(prev => ({
+      ...prev,
+      [index]: !prev[index]
+    }));
+  };
   
   // 自动滚动到最新消息
   useEffect(() => {
@@ -97,8 +108,96 @@ const ChatMessages: React.FC<ChatMessagesProps> = ({ messages, loading }) => {
       );
     }
     
+    // API请求消息 - 修改为右侧显示
+    if (message.type === 'api_request') {
+      const isExpanded = !!expandedApiDetails[index];
+      
+      return (
+        <div 
+          key={index} 
+          style={{ 
+            display: 'flex', 
+            justifyContent: 'flex-end', 
+            marginBottom: 16 
+          }}
+        >
+          <div style={{ 
+            maxWidth: '80%', 
+            backgroundColor: '#fff', 
+            padding: '12px 16px', 
+            borderRadius: '8px 8px 0 8px',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+            border: `1px solid ${getMessageColor('api_request')}`
+          }}>
+            <div style={{ 
+              marginBottom: 8, 
+              fontWeight: 'bold',
+              color: getMessageColor('api_request'),
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <span>{message.message || 'API请求'}</span>
+              <Button 
+                size="small"
+                type="text"
+                onClick={() => toggleApiDetails(index)}
+              >
+                {isExpanded ? '收起' : '查看详情'}
+              </Button>
+            </div>
+            
+            {isExpanded && message.details && (
+              <div style={{ fontSize: '13px' }}>
+                <div>使用模型: {message.details.model || '未指定'}</div>
+                {message.details.content && (
+                  <>
+                    <div style={{ marginTop: 10, marginBottom: 4 }}>提示词内容:</div>
+                    <div 
+                      style={{ 
+                        backgroundColor: '#fafafa', 
+                        padding: 10, 
+                        borderRadius: 4,
+                        border: '1px solid #f0f0f0',
+                        maxHeight: '200px',
+                        overflow: 'auto',
+                        whiteSpace: 'pre-wrap',
+                        fontSize: '12px',
+                        fontFamily: 'monospace'
+                      }}
+                    >
+                      {message.details.content}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+            
+            <div style={{ fontSize: '12px', color: '#8c8c8c', marginTop: 4, textAlign: 'right' }}>
+              {message.details?.timestamp ? new Date(message.details.timestamp).toLocaleTimeString() : new Date(message.timestamp).toLocaleTimeString()}
+            </div>
+          </div>
+          <Avatar 
+            style={{ 
+              marginLeft: 8, 
+              backgroundColor: '#fa8c16' 
+            }} 
+            icon={<ApiOutlined />} 
+          />
+        </div>
+      );
+    }
+    
     // 分析结果或结论
     if (message.type === 'analysis' || message.type === 'conclusion') {
+      // 添加安全检查
+      const hasApiDetails = Boolean(
+        message.api_details && 
+        message.api_details.payload && 
+        message.api_details.payload.content
+      );
+      const isExpanded = !!expandedApiDetails[index];
+      
       return (
         <div 
           key={index} 
@@ -126,15 +225,60 @@ const ChatMessages: React.FC<ChatMessagesProps> = ({ messages, loading }) => {
             <div style={{ 
               marginBottom: 8, 
               fontWeight: 'bold',
-              color: getMessageColor(message.type)
+              color: getMessageColor(message.type),
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
             }}>
-              {message.actor}
-              {message.stats && (
-                <span style={{ fontSize: '12px', marginLeft: 8, color: '#8c8c8c' }}>
-                  (使用模型: {message.stats.model})
-                </span>
+              <span>
+                {message.actor}
+                {message.stats && (
+                  <span style={{ fontSize: '12px', marginLeft: 8, color: '#8c8c8c' }}>
+                    (使用模型: {message.stats.model})
+                  </span>
+                )}
+              </span>
+              
+              {/* 添加查看API详情按钮 - 安全检查 */}
+              {hasApiDetails && (
+                <Button 
+                  size="small"
+                  type="text"
+                  onClick={() => toggleApiDetails(index)}
+                >
+                  {isExpanded ? '收起API' : '查看API'}
+                </Button>
               )}
             </div>
+            
+            {/* API详情显示区域 - 安全检查 */}
+            {isExpanded && hasApiDetails && (
+              <div style={{ fontSize: '13px', marginBottom: 10 }}>
+                <div>选择的角色和模型:</div>
+                <ul style={{ paddingLeft: 20, margin: '4px 0' }}>
+                  <li>
+                    {message.actor}: {message.stats?.model || '未指定'}
+                  </li>
+                </ul>
+                <div style={{ marginTop: 10, marginBottom: 4 }}>提示词内容:</div>
+                <div 
+                  style={{ 
+                    backgroundColor: '#fafafa', 
+                    padding: 10, 
+                    borderRadius: 4,
+                    border: '1px solid #f0f0f0',
+                    maxHeight: '200px',
+                    overflow: 'auto',
+                    whiteSpace: 'pre-wrap',
+                    fontSize: '12px',
+                    fontFamily: 'monospace'
+                  }}
+                >
+                  {message.api_details?.payload?.content || '无提示词内容'}
+                </div>
+              </div>
+            )}
+            
             <div className="markdown-content">
               <ReactMarkdown>{message.content || ''}</ReactMarkdown>
             </div>
